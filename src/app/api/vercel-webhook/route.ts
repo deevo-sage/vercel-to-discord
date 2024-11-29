@@ -2,16 +2,10 @@ import crypto from "crypto";
 import { VercelWebhookEvent } from "../../../types";
 
 const { WEBHOOK_INTEGRATION_SECRET, DISCORD_WEBHOOK_URL } = process.env;
+export const maxDuration = 300;
 
 const urls = ["https://thebiohackers.co"];
 export const POST = async (req: Request, res: Response) => {
-  await Promise.race([
-    urls.map((url) => fetch(url + "/api/revalidate")),
-    new Promise((resolve, reject) => {
-      setTimeout(resolve, 2000);
-    }),
-  ]);
-
   if (typeof WEBHOOK_INTEGRATION_SECRET != "string") {
     throw new Error("No integration secret found");
   }
@@ -68,14 +62,30 @@ async function sendDiscordMessageFor(vercelEvent: VercelWebhookEvent) {
   const githubCommitUrl = `https://github.com/${githubOrg}/${githubCommitRepo}/commit/${githubCommitSha}`;
   const githubCommitMessage =
     vercelEvent.payload.deployment.meta["githubCommitMessage"];
-
+  if (name.toLowerCase() === "builder")
+    await Promise.race([
+      urls.map((url) => fetch(url + "/api/revalidate")),
+      new Promise((resolve, reject) => {
+        setTimeout(resolve, 2000);
+      }),
+    ]);
+  let revalidation = false;
+  if (name.toLowerCase() === "intelligence-dashboard") {
+    await fetch("https://flare.heliumbuilder.com/api/revalidate/all-demo")
+      .then(() => {
+        revalidation = true;
+      })
+      .finally(() => {});
+  }
   const discordMessage = {
     content: null,
     embeds: [
       {
         title: `Deployment of ${name} in ${gitBranch.toUpperCase()}: ${state}.`,
         url: deploymentDashboardUrl,
-        description: `The deployment for ${name} is now ${state}.`,
+        description: `The deployment for ${name} is now ${state}.
+revalidation: ${revalidation}
+`,
         color: state === "SUCCEEDED" ? 3066993 : 15158332, // Green for success, red for failure
         fields: [
           {
